@@ -33,7 +33,7 @@ jobs:
       - name: Generate Android project
         run: npx expo prebuild --platform android --non-interactive
 
-      - name: Decode keystore (alias: test_app)
+      - name: "Decode keystore (alias: test_app)"
         env:
           TEST_APP_KEYSTORE_BASE64: ${{ secrets.TEST_APP_KEYSTORE_BASE64 }}
         run: |
