@@ -54,6 +54,15 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -dname "CN=GitHub Actions, OU=Mobile, O=Automation, L=Remote, S=Remote, C=US"
 
+      - name: Generate Android JS bundle
+        run: |
+          mkdir -p android/app/src/main/assets
+          npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+
+      - name: Clean Gradle cache after bundle generation
+        working-directory: android
+        run: ./gradlew clean
+
       - name: Build release APK
         working-directory: android
         env:

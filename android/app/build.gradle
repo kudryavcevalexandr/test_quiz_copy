@@ -1,0 +1,4 @@
+// Temporary Hermes override for release stability debugging.
+project.ext.react = [
+    enableHermes: false
+]
