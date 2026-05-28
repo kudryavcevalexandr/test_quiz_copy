@@ -54,10 +54,64 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -dname "CN=GitHub Actions, OU=Mobile, O=Automation, L=Remote, S=Remote, C=US"
 
+      - name: Resolve JS entry file
+        id: resolve_entry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PACKAGE_MAIN=$(node -p "require('./package.json').main || ''")
+          PACKAGE_MAIN="${PACKAGE_MAIN#./}"
+
+          CANDIDATES=()
+          if [[ -n "$PACKAGE_MAIN" ]]; then
+            CANDIDATES+=("$PACKAGE_MAIN")
+          fi
+          CANDIDATES+=("index.js" "index.ts" "index.tsx" "expo/AppEntry.js" "App.js" "App.tsx")
+
+          ENTRY_FILE=""
+          for candidate in "${CANDIDATES[@]}"; do
+            candidate="${candidate#./}"
+            if [[ -f "$candidate" ]]; then
+              ENTRY_FILE="$candidate"
+              break
+            fi
+          done
+
+          if [[ -z "$ENTRY_FILE" ]]; then
+            echo "❌ Could not resolve a valid JS entry file."
+            echo "Checked candidates (in order): ${CANDIDATES[*]}"
+            echo "Tip: set a valid \"main\" field in package.json or add one of the common entry files."
+            exit 1
+          fi
+
+          echo "✅ Resolved entry file: $ENTRY_FILE"
+          echo "entry_file=$ENTRY_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Validate resolved JS entry file exists
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ENTRY_FILE="${{ steps.resolve_entry.outputs.entry_file }}"
+
+          if [[ -z "$ENTRY_FILE" ]]; then
+            echo "❌ Entry file output was empty."
+            exit 1
+          fi
+
+          if [[ ! -f "$ENTRY_FILE" ]]; then
+            echo "❌ Entry file does not exist: $ENTRY_FILE"
+            echo "This check fails early to avoid Metro Bundler resolution errors."
+            exit 1
+          fi
+
+          echo "✅ Entry file exists: $ENTRY_FILE"
+
       - name: Generate Android JS bundle
         run: |
           mkdir -p android/app/src/main/assets
-          npx expo export:embed --platform android --dev false --entry-file App.js --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
+          npx expo export:embed --platform android --dev false --entry-file "${{ steps.resolve_entry.outputs.entry_file }}" --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
 
       - name: Clean Gradle cache after bundle generation
         working-directory: android
