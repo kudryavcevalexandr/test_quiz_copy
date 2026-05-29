@@ -1,46 +1,156 @@
+# Собирает production APK для React Native / Expo bare проекта.
 name: Build Android Release APK
 
 on:
+  # Запускаем сборку при пуше в основную ветку.
   push:
     branches:
       - main
+  # Оставляем ручной запуск из интерфейса GitHub Actions.
   workflow_dispatch:
 
 env:
+  # Node.js 18+ требуется современным версиям React Native / Expo.
   NODE_VERSION: '20'
+  # Android Gradle Plugin для RN 0.79 корректно работает с JDK 17.
   JAVA_VERSION: '17'
+  # Фиксируем package name, который должен попасть в сгенерированный Android-проект.
+  ANDROID_PACKAGE_NAME: com.anonymous.blockordergame
+  # Собираем только release-вариант, чтобы Gradle выполнил bundleReleaseJsAndAssets.
+  GRADLE_TASK: :app:assembleRelease
+  # Включаем обязательный 64-bit ABI для реальных устройств; оставляем популярные ABI для совместимости.
+  ANDROID_ABIS: armeabi-v7a,arm64-v8a,x86,x86_64
+  # Временный CI keystore нужен только чтобы получить устанавливаемый release APK как артефакт.
   KEYSTORE_PATH: android/app/release.keystore
-  KEYSTORE_ALIAS: release
+  KEYSTORE_ALIAS: github-actions-release
   KEYSTORE_PASSWORD: changeit123
   KEY_PASSWORD: changeit123
 
 jobs:
   build-release-apk:
+    # Сборка Android выполняется на Linux runner.
     runs-on: ubuntu-latest
 
     steps:
+      # Забираем исходный код репозитория.
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Определяем пакетный менеджер, чтобы корректно установить зависимости и кэшировать npm/yarn.
+      - name: Detect JavaScript package manager
+        id: package_manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f yarn.lock ]]; then
+            echo "manager=yarn" >> "$GITHUB_OUTPUT"
+            echo "cache=yarn" >> "$GITHUB_OUTPUT"
+            echo "install_command=yarn install --frozen-lockfile" >> "$GITHUB_OUTPUT"
+            echo "lockfile=yarn.lock" >> "$GITHUB_OUTPUT"
+          else
+            echo "manager=npm" >> "$GITHUB_OUTPUT"
+            echo "cache=npm" >> "$GITHUB_OUTPUT"
+            echo "install_command=npm ci" >> "$GITHUB_OUTPUT"
+            echo "lockfile=package-lock.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Устанавливаем Node.js и включаем встроенный кэш npm/yarn по lock-файлу.
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          cache: ${{ steps.package_manager.outputs.cache }}
+          cache-dependency-path: ${{ steps.package_manager.outputs.lockfile }}
 
-      - name: Setup Java
+      # Включаем Corepack для воспроизводимых установок Yarn, если проект использует yarn.lock.
+      - name: Enable Corepack for Yarn
+        if: steps.package_manager.outputs.manager == 'yarn'
+        run: corepack enable
+
+      # Устанавливаем JDK 17 и включаем Gradle cache через setup-java.
+      - name: Setup Java 17 with Gradle cache
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
 
-      - name: Install dependencies
-        run: npm ci
+      # Дополнительно кэшируем wrapper/caches Gradle для ускорения повторных сборок.
+      - name: Cache Gradle directories
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties', 'package-lock.json', 'yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --non-interactive
+      # Устанавливаем JS-зависимости строго по lock-файлу.
+      - name: Install JavaScript dependencies
+        run: ${{ steps.package_manager.outputs.install_command }}
 
-      - name: Generate release keystore
+      # Для Expo bare/prebuild проектов генерируем Android native project, если gradlew ещё не закоммичен.
+      - name: Generate Android native project when needed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -f android/gradlew ]]; then
+            npx expo prebuild --platform android --non-interactive --clean
+          else
+            echo "android/gradlew already exists; skipping Expo prebuild."
+          fi
+
+      # Проверяем package name/applicationId после prebuild, чтобы APK собирался как com.anonymous.blockordergame.
+      - name: Ensure Android package name
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -q "applicationId[[:space:]]*['\"]${ANDROID_PACKAGE_NAME}['\"]" android/app/build.gradle; then
+            sed -i -E "s/applicationId[[:space:]]+['\"][^'\"]+['\"]/applicationId \"${ANDROID_PACKAGE_NAME}\"/" android/app/build.gradle
+          fi
+          if grep -q "namespace[[:space:]]*['\"]" android/app/build.gradle; then
+            sed -i -E "s/namespace[[:space:]]+['\"][^'\"]+['\"]/namespace \"${ANDROID_PACKAGE_NAME}\"/" android/app/build.gradle
+          fi
+          grep -nE "namespace|applicationId" android/app/build.gradle || true
+
+      # Гарантируем наличие arm64-v8a и остальных ABI, чтобы избежать конфликтов линковки native/Hermes .so на 64-bit устройствах.
+      - name: Ensure Android ABI filters include arm64-v8a
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path('android/app/build.gradle')
+          text = path.read_text()
+          abis = [abi.strip() for abi in os.environ['ANDROID_ABIS'].split(',') if abi.strip()]
+          abi_line = 'abiFilters ' + ', '.join(f'"{abi}"' for abi in abis)
+
+          if 'abiFilters' in text:
+              text = re.sub(r'abiFilters\s+[^\n]+', abi_line, text)
+          else:
+              default_config = re.search(r'(defaultConfig\s*\{)', text)
+              if not default_config:
+                  raise SystemExit('defaultConfig block was not found in android/app/build.gradle')
+              insert = default_config.group(1) + '\n        ndk {\n            ' + abi_line + '\n        }'
+              text = text[:default_config.start(1)] + insert + text[default_config.end(1):]
+
+          if 'arm64-v8a' not in text:
+              raise SystemExit('arm64-v8a ABI was not added to android/app/build.gradle')
+
+          path.write_text(text)
+          PY
+          grep -n "abiFilters" android/app/build.gradle
+
+      # Выдаём Gradle wrapper права на выполнение перед clean/build.
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      # Создаём временный release keystore для CI-сборки APK.
+      - name: Generate CI release keystore
         run: |
           keytool -genkeypair \
             -v \
@@ -54,81 +164,39 @@ jobs:
             -keypass "$KEY_PASSWORD" \
             -dname "CN=GitHub Actions, OU=Mobile, O=Automation, L=Remote, S=Remote, C=US"
 
-      - name: Resolve JS entry file
-        id: resolve_entry
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          PACKAGE_MAIN=$(node -p "require('./package.json').main || ''")
-          PACKAGE_MAIN="${PACKAGE_MAIN#./}"
-
-          CANDIDATES=()
-          if [[ -n "$PACKAGE_MAIN" ]]; then
-            CANDIDATES+=("$PACKAGE_MAIN")
-          fi
-          CANDIDATES+=("index.js" "index.ts" "index.tsx" "expo/AppEntry.js" "App.js" "App.tsx")
-
-          ENTRY_FILE=""
-          for candidate in "${CANDIDATES[@]}"; do
-            candidate="${candidate#./}"
-            if [[ -f "$candidate" ]]; then
-              ENTRY_FILE="$candidate"
-              break
-            fi
-          done
-
-          if [[ -z "$ENTRY_FILE" ]]; then
-            echo "❌ Could not resolve a valid JS entry file."
-            echo "Checked candidates (in order): ${CANDIDATES[*]}"
-            echo "Tip: set a valid \"main\" field in package.json or add one of the common entry files."
-            exit 1
-          fi
-
-          echo "✅ Resolved entry file: $ENTRY_FILE"
-          echo "entry_file=$ENTRY_FILE" >> "$GITHUB_OUTPUT"
-
-      - name: Validate resolved JS entry file exists
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          ENTRY_FILE="${{ steps.resolve_entry.outputs.entry_file }}"
-
-          if [[ -z "$ENTRY_FILE" ]]; then
-            echo "❌ Entry file output was empty."
-            exit 1
-          fi
-
-          if [[ ! -f "$ENTRY_FILE" ]]; then
-            echo "❌ Entry file does not exist: $ENTRY_FILE"
-            echo "This check fails early to avoid Metro Bundler resolution errors."
-            exit 1
-          fi
-
-          echo "✅ Entry file exists: $ENTRY_FILE"
-
-      - name: Generate Android JS bundle
-        run: |
-          mkdir -p android/app/src/main/assets
-          npx expo export:embed --platform android --dev false --entry-file "${{ steps.resolve_entry.outputs.entry_file }}" --bundle-output android/app/src/main/assets/index.android.bundle --assets-dest android/app/src/main/res
-
-      - name: Clean Gradle cache after bundle generation
+      # Очищаем Android build directory перед основной release-сборкой.
+      - name: Clean Android Gradle project
         working-directory: android
-        run: ./gradlew clean
+        run: ./gradlew clean --no-daemon
 
-      - name: Build release APK
+      # Собираем именно Release APK: этот вариант автоматически запускает bundleReleaseJsAndAssets и кладёт JS bundle/assets в APK.
+      - name: Build Android release APK with bundled JS and Hermes native libraries
         working-directory: android
         env:
           RELEASE_STORE_FILE: release.keystore
           RELEASE_STORE_PASSWORD: ${{ env.KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ env.KEYSTORE_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
+        run: ./gradlew ${{ env.GRADLE_TASK }} --no-daemon
 
+      # Находим итоговый release APK независимо от имени signed/unsigned файла.
+      - name: Locate release APK
+        id: apk
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK_PATH=$(find android/app/build/outputs/apk/release -type f -name '*.apk' | sort | tail -n 1)
+          if [[ -z "$APK_PATH" ]]; then
+            echo "No release APK was found."
+            exit 1
+          fi
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "Found APK: $APK_PATH"
+
+      # Загружаем готовый APK как артефакт GitHub Actions.
       - name: Upload release APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: blockordergame-release-apk
+          path: ${{ steps.apk.outputs.path }}
           if-no-files-found: error
