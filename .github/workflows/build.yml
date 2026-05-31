@@ -8,18 +8,26 @@ on:
       - main
   # Оставляем ручной запуск из интерфейса GitHub Actions.
   workflow_dispatch:
+    inputs:
+      project-dir:
+        description: 'React Native/Expo project directory relative to the repository root.'
+        required: false
+        default: '.'
+      android-dir:
+        description: 'Android native project directory relative to the repository root. Leave empty to use <project-dir>/android.'
+        required: false
+        default: ''
 
 env:
   # Node.js 18+ требуется современным версиям React Native / Expo.
   NODE_VERSION: '20'
   # Android Gradle Plugin для RN 0.79 корректно работает с JDK 17.
   JAVA_VERSION: '17'
-  # Папка React Native/Expo проекта относительно корня репозитория.
-  # Для монорепозитория поменяйте на apps/mobile (без начального /).
+  # Значения по умолчанию для push-сборок; workflow_dispatch может переопределить их inputs выше.
+  # Для монорепозитория задайте PROJECT_DIR: apps/mobile, а ANDROID_DIR оставьте пустым
+  # или укажите явный путь вроде apps/mobile/android.
   PROJECT_DIR: .
-  # Папка нативного Android проекта относительно корня репозитория.
-  # Для монорепозитория поменяйте на apps/mobile/android.
-  ANDROID_DIR: ./android
+  ANDROID_DIR: ''
   # Фиксируем package name, который должен попасть в сгенерированный Android-проект.
   ANDROID_PACKAGE_NAME: com.anonymous.blockordergame
   # Собираем только release-вариант, чтобы Gradle выполнил bundleReleaseJsAndAssets.
@@ -27,7 +35,6 @@ env:
   # Включаем обязательный 64-bit ABI для реальных устройств; оставляем популярные ABI для совместимости.
   ANDROID_ABIS: armeabi-v7a,arm64-v8a,x86,x86_64
   # Временный CI keystore нужен только чтобы получить устанавливаемый release APK как артефакт.
-  KEYSTORE_PATH: android/app/release.keystore
   KEYSTORE_ALIAS: github-actions-release
   KEYSTORE_PASSWORD: changeit123
   KEY_PASSWORD: changeit123
@@ -42,13 +49,73 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # Нормализуем PROJECT_DIR/ANDROID_DIR один раз, чтобы все последующие шаги
+      # использовали одинаковые пути относительно корня репозитория.
+      - name: Resolve build directories
+        id: paths
+        shell: bash
+        env:
+          PROJECT_DIR_INPUT: ${{ inputs['project-dir'] || env.PROJECT_DIR }}
+          ANDROID_DIR_INPUT: ${{ inputs['android-dir'] || env.ANDROID_DIR }}
+        run: |
+          set -euo pipefail
+          workspace="${GITHUB_WORKSPACE:-$PWD}"
+
+          resolve_under_workspace() {
+            local input="$1"
+            local fallback="$2"
+            local label="$3"
+            local value="${input:-$fallback}"
+            local abs
+
+            if [[ "$value" = /* ]]; then
+              abs=$(realpath -m "$value")
+            else
+              abs=$(realpath -m "$workspace/$value")
+            fi
+
+            case "$abs" in
+              "$workspace"|"$workspace"/*) ;;
+              *)
+                echo "$label must stay inside the repository workspace: $value" >&2
+                exit 1
+                ;;
+            esac
+
+            realpath -m --relative-to="$workspace" "$abs"
+          }
+
+          project_dir=$(resolve_under_workspace "$PROJECT_DIR_INPUT" "." "PROJECT_DIR")
+          if [[ "$project_dir" == "." ]]; then
+            default_android_dir="android"
+          else
+            default_android_dir="$project_dir/android"
+          fi
+          android_dir=$(resolve_under_workspace "$ANDROID_DIR_INPUT" "$default_android_dir" "ANDROID_DIR")
+          android_from_project=$(realpath -m --relative-to="$workspace/$project_dir" "$workspace/$android_dir")
+
+          echo "project_dir=$project_dir" >> "$GITHUB_OUTPUT"
+          echo "android_dir=$android_dir" >> "$GITHUB_OUTPUT"
+          echo "android_from_project=$android_from_project" >> "$GITHUB_OUTPUT"
+          echo "package_lock=$project_dir/package-lock.json" >> "$GITHUB_OUTPUT"
+          echo "yarn_lock=$project_dir/yarn.lock" >> "$GITHUB_OUTPUT"
+
+          echo "Project directory: $project_dir"
+          echo "Android directory: $android_dir"
+          echo "Android path from project directory: $android_from_project"
+
       # Определяем пакетный менеджер, чтобы корректно установить зависимости и кэшировать npm/yarn.
       - name: Detect JavaScript package manager
         id: package_manager
         shell: bash
         run: |
           set -euo pipefail
-          PROJECT_DIR="${PROJECT_DIR%/}"
+          PROJECT_DIR="${{ steps.paths.outputs.project_dir }}"
+          if [[ ! -f "$PROJECT_DIR/package.json" ]]; then
+            echo "package.json was not found in $PROJECT_DIR. Set project-dir/PROJECT_DIR to the React Native or Expo app directory." >&2
+            exit 1
+          fi
           if [[ -f "$PROJECT_DIR/yarn.lock" ]]; then
             echo "manager=yarn" >> "$GITHUB_OUTPUT"
             echo "cache=yarn" >> "$GITHUB_OUTPUT"
@@ -89,18 +156,18 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles(format('{0}/**/*.gradle*', env.ANDROID_DIR), format('{0}/**/gradle-wrapper.properties', env.ANDROID_DIR), steps.package_manager.outputs.lockfile) }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles(format('{0}/**/*.gradle*', steps.paths.outputs.android_dir), format('{0}/**/gradle-wrapper.properties', steps.paths.outputs.android_dir), steps.package_manager.outputs.lockfile) }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
       # Устанавливаем JS-зависимости строго по lock-файлу.
       - name: Install JavaScript dependencies
-        working-directory: ${{ env.PROJECT_DIR }}
+        working-directory: ${{ steps.paths.outputs.project_dir }}
         run: ${{ steps.package_manager.outputs.install_command }}
 
       # React Native 0.79 ожидает отдельный CLI пакет для команды bundle.
       - name: Ensure React Native CLI is available
-        working-directory: ${{ env.PROJECT_DIR }}
+        working-directory: ${{ steps.paths.outputs.project_dir }}
         shell: bash
         run: |
           set -euo pipefail
@@ -108,19 +175,32 @@ jobs:
             npm install --no-save --no-package-lock @react-native-community/cli@latest
           fi
 
-      # Чистый React Native CLI проект должен хранить android/gradlew в Git.
-      - name: Validate Android native project
+      # Expo-проекты часто не хранят gradlew в Git; генерируем android/gradlew, если это стандартный путь проекта.
+      - name: Ensure Android native project exists
         shell: bash
+        env:
+          PROJECT_DIR: ${{ steps.paths.outputs.project_dir }}
+          ANDROID_DIR: ${{ steps.paths.outputs.android_dir }}
+          ANDROID_FROM_PROJECT: ${{ steps.paths.outputs.android_from_project }}
         run: |
           set -euo pipefail
-          if [[ ! -f "${ANDROID_DIR}/gradlew" ]]; then
-            echo "${ANDROID_DIR}/gradlew was not found. Set PROJECT_DIR/ANDROID_DIR to the React Native project location, or commit the native Android project generated by React Native CLI before building remotely." >&2
+          if [[ ! -f "$ANDROID_DIR/gradlew" && "$ANDROID_FROM_PROJECT" == "android" ]]; then
+            if (cd "$PROJECT_DIR" && node -e "const p=require('./package.json'); process.exit(p.dependencies?.expo || p.devDependencies?.expo ? 0 : 1)"); then
+              echo "$ANDROID_DIR/gradlew was not found; generating the native Android project with Expo prebuild."
+              (cd "$PROJECT_DIR" && npx expo prebuild --platform android --no-install)
+            fi
+          fi
+
+          if [[ ! -f "$ANDROID_DIR/gradlew" ]]; then
+            echo "$ANDROID_DIR/gradlew was not found. Set project-dir/PROJECT_DIR and android-dir/ANDROID_DIR to the correct monorepo paths, or commit the native Android project generated by React Native CLI before building remotely." >&2
             exit 1
           fi
 
       # Проверяем package name/applicationId перед сборкой, чтобы APK собирался как com.anonymous.blockordergame.
       - name: Ensure Android package name
         shell: bash
+        env:
+          ANDROID_DIR: ${{ steps.paths.outputs.android_dir }}
         run: |
           set -euo pipefail
           BUILD_GRADLE="${ANDROID_DIR}/app/build.gradle"
@@ -135,6 +215,8 @@ jobs:
       # Гарантируем наличие arm64-v8a и остальных ABI, чтобы избежать конфликтов линковки native/Hermes .so на 64-bit устройствах.
       - name: Ensure Android ABI filters include arm64-v8a
         shell: bash
+        env:
+          ANDROID_DIR: ${{ steps.paths.outputs.android_dir }}
         run: |
           set -euo pipefail
           python3 <<'PY'
@@ -165,28 +247,31 @@ jobs:
 
       # КРИТИЧЕСКИ ВАЖНО: заранее кладём production JS bundle в assets APK.
       - name: Bundle JavaScript into Android assets
-        working-directory: ${{ env.PROJECT_DIR }}
+        working-directory: ${{ steps.paths.outputs.project_dir }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p android/app/src/main/assets
-          mkdir -p android/app/src/main/res
+          ANDROID_FROM_PROJECT="${{ steps.paths.outputs.android_from_project }}"
+          mkdir -p "$ANDROID_FROM_PROJECT/app/src/main/assets"
+          mkdir -p "$ANDROID_FROM_PROJECT/app/src/main/res"
           npx react-native bundle \
             --platform android \
             --dev false \
             --entry-file index.js \
-            --bundle-output android/app/src/main/assets/index.android.bundle \
-            --assets-dest android/app/src/main/res
-          test -s android/app/src/main/assets/index.android.bundle
+            --bundle-output "$ANDROID_FROM_PROJECT/app/src/main/assets/index.android.bundle" \
+            --assets-dest "$ANDROID_FROM_PROJECT/app/src/main/res"
+          test -s "$ANDROID_FROM_PROJECT/app/src/main/assets/index.android.bundle"
 
       # Выдаём Gradle wrapper права на выполнение перед clean/build.
       - name: Make Gradle wrapper executable
-        run: chmod +x "${ANDROID_DIR}/gradlew"
+        run: chmod +x "${{ steps.paths.outputs.android_dir }}/gradlew"
 
       # Создаём временный release keystore для CI-сборки APK.
       - name: Generate CI release keystore
-        working-directory: ${{ env.PROJECT_DIR }}
+        env:
+          KEYSTORE_PATH: ${{ steps.paths.outputs.android_dir }}/app/release.keystore
         run: |
+          mkdir -p "$(dirname "$KEYSTORE_PATH")"
           keytool -genkeypair \
             -v \
             -storetype PKCS12 \
@@ -201,12 +286,12 @@ jobs:
 
       # Очищаем Android build directory перед основной release-сборкой.
       - name: Clean Android Gradle project
-        working-directory: ${{ env.ANDROID_DIR }}
+        working-directory: ${{ steps.paths.outputs.android_dir }}
         run: ./gradlew clean --no-daemon
 
       # Собираем один универсальный Release APK; JS bundle уже принудительно создан предыдущим шагом.
       - name: Build Android release universal APK
-        working-directory: ${{ env.ANDROID_DIR }}
+        working-directory: ${{ steps.paths.outputs.android_dir }}
         env:
           RELEASE_STORE_FILE: release.keystore
           RELEASE_STORE_PASSWORD: ${{ env.KEYSTORE_PASSWORD }}
@@ -218,6 +303,8 @@ jobs:
       - name: Locate release APK
         id: apk
         shell: bash
+        env:
+          ANDROID_DIR: ${{ steps.paths.outputs.android_dir }}
         run: |
           set -euo pipefail
           APK_PATH=$(find "${ANDROID_DIR}/app/build/outputs/apk/release" -type f -name '*.apk' | sort | tail -n 1)
