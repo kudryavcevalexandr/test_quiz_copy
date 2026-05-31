@@ -1,0 +1,7 @@
+node_modules/
+android/.gradle/
+android/build/
+android/app/.gradle/
+android/app/build/
+android/app/release.keystore
+android/app/src/main/assets/index.android.bundle
