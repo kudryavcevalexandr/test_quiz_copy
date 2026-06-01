@@ -34,10 +34,8 @@ env:
   GRADLE_TASK: :app:assembleRelease
   # Включаем обязательный 64-bit ABI для реальных устройств; оставляем популярные ABI для совместимости.
   ANDROID_ABIS: armeabi-v7a,arm64-v8a,x86,x86_64
-  # Временный CI keystore нужен только чтобы получить устанавливаемый release APK как артефакт.
+  # Alias can be public; keystore/key passwords must come from GitHub Secrets.
   KEYSTORE_ALIAS: github-actions-release
-  KEYSTORE_PASSWORD: changeit123
-  KEY_PASSWORD: changeit123
 
 jobs:
   build-release-apk:
@@ -259,6 +257,9 @@ jobs:
           mkdir -p "${ANDROID_FROM_PROJECT}/app/src/main/assets"
           mkdir -p "${ANDROID_FROM_PROJECT}/app/src/main/res"
 
+          ls -la
+          ls -la "${ANDROID_FROM_PROJECT}"
+
           npx react-native bundle \
             --platform android \
             --dev false \
@@ -266,6 +267,7 @@ jobs:
             --bundle-output "${ANDROID_FROM_PROJECT}/app/src/main/assets/index.android.bundle" \
             --assets-dest "${ANDROID_FROM_PROJECT}/app/src/main/res"
 
+          ls -la "${ANDROID_FROM_PROJECT}/app/src/main/assets"
           test -s "${ANDROID_FROM_PROJECT}/app/src/main/assets/index.android.bundle"
 
       # Выдаём Gradle wrapper права на выполнение перед clean/build.
@@ -273,10 +275,20 @@ jobs:
         run: chmod +x "${{ steps.paths.outputs.android_dir }}/gradlew"
 
       # Создаём временный release keystore для CI-сборки APK.
+      # If KEYSTORE_PASSWORD or KEY_PASSWORD were ever printed in Actions logs,
+      # rotate these GitHub Secrets and regenerate the keystore.
       - name: Generate CI release keystore
         env:
           KEYSTORE_PATH: ${{ steps.paths.outputs.android_dir }}/app/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          set -euo pipefail
+          if [[ -z "${KEYSTORE_PASSWORD:-}" || -z "${KEY_PASSWORD:-}" ]]; then
+            echo "GitHub Secrets KEYSTORE_PASSWORD and KEY_PASSWORD must be configured for release signing." >&2
+            exit 1
+          fi
+
           mkdir -p "$(dirname "$KEYSTORE_PATH")"
           keytool -genkeypair \
             -v \
@@ -300,10 +312,10 @@ jobs:
         working-directory: ${{ steps.paths.outputs.android_dir }}
         env:
           RELEASE_STORE_FILE: release.keystore
-          RELEASE_STORE_PASSWORD: ${{ env.KEYSTORE_PASSWORD }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ env.KEYSTORE_ALIAS }}
-          RELEASE_KEY_PASSWORD: ${{ env.KEY_PASSWORD }}
-        run: ./gradlew ${{ env.GRADLE_TASK }} --no-daemon
+          RELEASE_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew ${{ env.GRADLE_TASK }} --stacktrace --no-daemon
 
       # Находим итоговый release APK независимо от имени signed/unsigned файла.
       - name: Locate release APK
