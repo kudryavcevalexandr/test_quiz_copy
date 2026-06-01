@@ -249,18 +249,24 @@ jobs:
       - name: Bundle JavaScript into Android assets
         working-directory: ${{ steps.paths.outputs.project_dir }}
         shell: bash
+        env:
+          ANDROID_FROM_PROJECT: ${{ steps.paths.outputs.android_from_project }}
         run: |
           set -euo pipefail
-          ANDROID_FROM_PROJECT="${{ steps.paths.outputs.android_from_project }}"
-          mkdir -p "$ANDROID_FROM_PROJECT/app/src/main/assets"
-          mkdir -p "$ANDROID_FROM_PROJECT/app/src/main/res"
+
+          # Так как мы находимся внутри working-directory,
+          # используем путь к Android-проекту относительно текущего PROJECT_DIR.
+          mkdir -p "${ANDROID_FROM_PROJECT}/app/src/main/assets"
+          mkdir -p "${ANDROID_FROM_PROJECT}/app/src/main/res"
+
           npx react-native bundle \
             --platform android \
             --dev false \
             --entry-file index.js \
-            --bundle-output "$ANDROID_FROM_PROJECT/app/src/main/assets/index.android.bundle" \
-            --assets-dest "$ANDROID_FROM_PROJECT/app/src/main/res"
-          test -s "$ANDROID_FROM_PROJECT/app/src/main/assets/index.android.bundle"
+            --bundle-output "${ANDROID_FROM_PROJECT}/app/src/main/assets/index.android.bundle" \
+            --assets-dest "${ANDROID_FROM_PROJECT}/app/src/main/res"
+
+          test -s "${ANDROID_FROM_PROJECT}/app/src/main/assets/index.android.bundle"
 
       # Выдаём Gradle wrapper права на выполнение перед clean/build.
       - name: Make Gradle wrapper executable
