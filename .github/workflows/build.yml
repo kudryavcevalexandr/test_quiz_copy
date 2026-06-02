@@ -210,6 +210,42 @@ jobs:
           fi
           grep -nE "namespace|applicationId" "$BUILD_GRADLE" || true
 
+      # Включаем генерацию BuildConfig для Android Gradle Plugin 8+, чтобы RN/Expo Java-код мог импортировать BuildConfig.
+      - name: Ensure Android BuildConfig generation is enabled
+        shell: bash
+        env:
+          ANDROID_DIR: ${{ steps.paths.outputs.android_dir }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import os
+          import re
+
+          path = Path(os.environ['ANDROID_DIR']) / 'app/build.gradle'
+          text = path.read_text()
+
+          if re.search(r'buildFeatures\s*\{[^}]*buildConfig\s*=\s*true', text, re.S):
+              path.write_text(text)
+              raise SystemExit(0)
+
+          android_match = re.search(r'android\s*\{', text)
+          if not android_match:
+              raise SystemExit('android block was not found in android/app/build.gradle')
+
+          compile_match = re.search(r'(^\s*(?:compileSdk|compileSdkVersion)\b[^\n]*\n)', text, re.M)
+          if compile_match:
+              insert_at = compile_match.end()
+              insert = '\n    buildFeatures {\n        buildConfig = true\n    }\n'
+          else:
+              insert_at = android_match.end()
+              insert = '\n    buildFeatures {\n        buildConfig = true\n    }\n'
+
+          text = text[:insert_at] + insert + text[insert_at:]
+          path.write_text(text)
+          PY
+          grep -n "buildConfig" "${ANDROID_DIR}/app/build.gradle"
+
       # Гарантируем наличие arm64-v8a и остальных ABI, чтобы избежать конфликтов линковки native/Hermes .so на 64-bit устройствах.
       - name: Ensure Android ABI filters include arm64-v8a
         shell: bash
