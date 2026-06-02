@@ -29,7 +29,7 @@ env:
   PROJECT_DIR: .
   ANDROID_DIR: ''
   # Фиксируем package name, который должен попасть в сгенерированный Android-проект.
-  ANDROID_PACKAGE_NAME: com.anonymous.blockordergame
+  ANDROID_PACKAGE_NAME: com.kudryavcevalexandr.blockordergame
   # Собираем только release-вариант, чтобы Gradle выполнил bundleReleaseJsAndAssets.
   GRADLE_TASK: :app:assembleRelease
   # Включаем обязательный 64-bit ABI для реальных устройств; оставляем популярные ABI для совместимости.
@@ -194,7 +194,7 @@ jobs:
             exit 1
           fi
 
-      # Проверяем package name/applicationId перед сборкой, чтобы APK собирался как com.anonymous.blockordergame.
+      # Проверяем package name/applicationId перед сборкой, чтобы APK собирался как com.kudryavcevalexandr.blockordergame.
       - name: Ensure Android package name
         shell: bash
         env:
