@@ -37,10 +37,10 @@ android {
         buildConfig = true
     }
 
-    namespace "com.anonymous.blockordergame"
+    namespace "com.kudryavcevalexandr.blockordergame"
 
     defaultConfig {
-        applicationId "com.anonymous.blockordergame"
+        applicationId "com.kudryavcevalexandr.blockordergame"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

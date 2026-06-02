@@ -1,4 +1,4 @@
-package com.anonymous.blockordergame;
+package com.kudryavcevalexandr.blockordergame;
 
 import android.os.Bundle;
 
