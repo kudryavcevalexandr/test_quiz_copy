@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Пятнашки",
+    "slug": "block-order-game",
+    "version": "1.0.0",
+    "android": {
+      "package": "com.kudryavcevalexandr.blockordergame"
+    }
+  }
+}
