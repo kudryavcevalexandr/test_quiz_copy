@@ -119,6 +119,8 @@ export default function App() {
     setTiles(shuffleTiles());
   };
 
+  const tileSize = (GRID_WIDTH - 16) / GRID_SIZE;
+
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.title}>Пятнашки 3x3</Text>
@@ -126,16 +128,29 @@ export default function App() {
 
       <View style={styles.grid}>
         {tiles.map((tile: Tile, index: number) => {
-          const isEmpty = tile === null;
+          if (tile === null) {
+            return null;
+          }
+
+          const row = Math.floor(index / GRID_SIZE);
+          const col = index % GRID_SIZE;
 
           return (
             <TouchableOpacity
-              key={tile === null ? 'empty-tile' : `tile-${tile}`}
-              style={[styles.tile, isEmpty && styles.emptyTile]}
+              key={`tile-${tile}`}
+              style={[
+                styles.tile,
+                {
+                  width: tileSize - 6,
+                  height: tileSize - 6,
+                  left: 8 + col * tileSize + 3,
+                  top: 8 + row * tileSize + 3,
+                },
+              ]}
               onPress={() => moveTile(index)}
-              disabled={isEmpty || isSolved}
+              disabled={isSolved}
             >
-              {!isEmpty && <Text style={styles.tileText}>{tile}</Text>}
+              <Text style={styles.tileText}>{tile}</Text>
             </TouchableOpacity>
           );
         })}
@@ -176,24 +191,17 @@ const styles = StyleSheet.create({
   grid: {
     width: GRID_WIDTH,
     height: GRID_WIDTH,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    position: 'relative',
     backgroundColor: '#dce3ef',
     borderRadius: 16,
     padding: 8,
-    justifyContent: 'space-between',
-    alignContent: 'space-between',
   },
   tile: {
-    width: '31.5%',
-    height: '31.5%',
+    position: 'absolute',
     borderRadius: 12,
     backgroundColor: '#3f51b5',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  emptyTile: {
-    backgroundColor: '#cfd8dc',
   },
   tileText: {
     color: '#fff',
