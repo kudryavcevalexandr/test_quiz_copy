@@ -1,9 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import {
   Dimensions,
+  LayoutAnimation,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
+  type LayoutAnimationConfig,
+  UIManager,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -13,6 +17,31 @@ type Tile = number | null;
 const GRID_SIZE = 3;
 const WIN_STATE: Tile[] = [1, 2, 3, 4, 5, 6, 7, 8, null];
 const SHUFFLE_MOVES = 150;
+const TILE_MOVE_ANIMATION: LayoutAnimationConfig = {
+  duration: 260,
+  create: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+  update: {
+    type: LayoutAnimation.Types.spring,
+    springDamping: 0.75,
+  },
+  delete: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+};
+const SHUFFLE_ANIMATION: LayoutAnimationConfig = {
+  duration: 320,
+  update: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+  },
+};
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const findEmptyIndex = (tiles: Tile[]): number => tiles.findIndex((tile) => tile === null);
 
@@ -68,12 +97,14 @@ export default function App() {
   const isSolved = useMemo(() => isWinningState(tiles), [tiles]);
 
   const moveTile = (tileIndex: number) => {
-    setTiles((prev) => {
+    setTiles((prev: Tile[]) => {
       const emptyIndex = findEmptyIndex(prev);
 
       if (!areAdjacent(tileIndex, emptyIndex)) {
         return prev;
       }
+
+      LayoutAnimation.configureNext(TILE_MOVE_ANIMATION);
 
       const updated = [...prev];
       updated[emptyIndex] = prev[tileIndex];
@@ -84,6 +115,7 @@ export default function App() {
   };
 
   const reset = () => {
+    LayoutAnimation.configureNext(SHUFFLE_ANIMATION);
     setTiles(shuffleTiles());
   };
 
@@ -93,12 +125,12 @@ export default function App() {
       <Text style={styles.subtitle}>Разложите квадратные блоки по порядку</Text>
 
       <View style={styles.grid}>
-        {tiles.map((tile, index) => {
+        {tiles.map((tile: Tile, index: number) => {
           const isEmpty = tile === null;
 
           return (
             <TouchableOpacity
-              key={index}
+              key={tile === null ? 'empty-tile' : `tile-${tile}`}
               style={[styles.tile, isEmpty && styles.emptyTile]}
               onPress={() => moveTile(index)}
               disabled={isEmpty || isSolved}
