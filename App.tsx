@@ -1,15 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Dimensions,
-  LayoutAnimation,
-  Platform,
+  PanResponder,
   SafeAreaView,
   StyleSheet,
   Text,
-  type LayoutAnimationConfig,
-  UIManager,
   TouchableOpacity,
   View,
+  type GestureResponderEvent,
+  type PanResponderGestureState,
 } from 'react-native';
 
 type Tile = number | null;
@@ -17,31 +17,15 @@ type Tile = number | null;
 const GRID_SIZE = 3;
 const WIN_STATE: Tile[] = [1, 2, 3, 4, 5, 6, 7, 8, null];
 const SHUFFLE_MOVES = 150;
-const TILE_MOVE_ANIMATION: LayoutAnimationConfig = {
-  duration: 260,
-  create: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-    property: LayoutAnimation.Properties.opacity,
-  },
-  update: {
-    type: LayoutAnimation.Types.spring,
-    springDamping: 0.75,
-  },
-  delete: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-    property: LayoutAnimation.Properties.opacity,
-  },
-};
-const SHUFFLE_ANIMATION: LayoutAnimationConfig = {
-  duration: 320,
-  update: {
-    type: LayoutAnimation.Types.easeInEaseOut,
-  },
-};
+const DRAG_COMPLETION_DISTANCE = 3;
+const TAP_DISTANCE = 5;
+const SWIPE_VELOCITY = 0.5;
+const TILE_GAP = 6;
+const GRID_PADDING = 8;
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const GRID_WIDTH = Math.min(SCREEN_WIDTH - 32, 340);
+const TILE_SIZE = (GRID_WIDTH - GRID_PADDING * 2) / GRID_SIZE;
 
 const findEmptyIndex = (tiles: Tile[]): number => tiles.findIndex((tile) => tile === null);
 
@@ -91,6 +75,193 @@ const shuffleTiles = (): Tile[] => {
   return shuffled;
 };
 
+const getCoordinates = (index: number) => {
+  const row = Math.floor(index / GRID_SIZE);
+  const col = index % GRID_SIZE;
+
+  return {
+    x: GRID_PADDING + col * TILE_SIZE + TILE_GAP / 2,
+    y: GRID_PADDING + row * TILE_SIZE + TILE_GAP / 2,
+  };
+};
+
+const getDirectionalDrag = (
+  currentIndex: number,
+  emptyIndex: number,
+  gesture: PanResponderGestureState,
+) => {
+  const emptyRow = Math.floor(emptyIndex / GRID_SIZE);
+  const emptyCol = emptyIndex % GRID_SIZE;
+  const currentRow = Math.floor(currentIndex / GRID_SIZE);
+  const currentCol = currentIndex % GRID_SIZE;
+
+  if (currentRow === emptyRow && Math.abs(currentCol - emptyCol) === 1) {
+    const maxDx = (emptyCol - currentCol) * TILE_SIZE;
+    const dx = maxDx > 0
+      ? Math.min(Math.max(gesture.dx, 0), maxDx)
+      : Math.max(Math.min(gesture.dx, 0), maxDx);
+
+    return { dx, dy: 0 };
+  }
+
+  if (currentCol === emptyCol && Math.abs(currentRow - emptyRow) === 1) {
+    const maxDy = (emptyRow - currentRow) * TILE_SIZE;
+    const dy = maxDy > 0
+      ? Math.min(Math.max(gesture.dy, 0), maxDy)
+      : Math.max(Math.min(gesture.dy, 0), maxDy);
+
+    return { dx: 0, dy };
+  }
+
+  return { dx: 0, dy: 0 };
+};
+
+const shouldCompleteMove = (
+  currentIndex: number,
+  emptyIndex: number,
+  gesture: PanResponderGestureState,
+): boolean => {
+  const emptyRow = Math.floor(emptyIndex / GRID_SIZE);
+  const emptyCol = emptyIndex % GRID_SIZE;
+  const currentRow = Math.floor(currentIndex / GRID_SIZE);
+  const currentCol = currentIndex % GRID_SIZE;
+  const isTap = Math.abs(gesture.dx) < TAP_DISTANCE && Math.abs(gesture.dy) < TAP_DISTANCE;
+
+  if (isTap) {
+    return true;
+  }
+
+  if (currentRow === emptyRow && Math.abs(currentCol - emptyCol) === 1) {
+    const direction = emptyCol - currentCol;
+
+    return (
+      Math.abs(gesture.dx) > TILE_SIZE / DRAG_COMPLETION_DISTANCE ||
+      gesture.vx * direction > SWIPE_VELOCITY
+    );
+  }
+
+  if (currentCol === emptyCol && Math.abs(currentRow - emptyRow) === 1) {
+    const direction = emptyRow - currentRow;
+
+    return (
+      Math.abs(gesture.dy) > TILE_SIZE / DRAG_COMPLETION_DISTANCE ||
+      gesture.vy * direction > SWIPE_VELOCITY
+    );
+  }
+
+  return false;
+};
+
+interface DraggableTileProps {
+  tile: number;
+  index: number;
+  tiles: Tile[];
+  moveTile: (index: number) => void;
+  isSolved: boolean;
+}
+
+const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: DraggableTileProps) => {
+  const pan = useRef(new Animated.ValueXY(getCoordinates(index))).current;
+  const indexRef = useRef(index);
+  const tilesRef = useRef(tiles);
+  const isSolvedRef = useRef(isSolved);
+
+  useEffect(() => {
+    indexRef.current = index;
+    tilesRef.current = tiles;
+    isSolvedRef.current = isSolved;
+  }, [index, tiles, isSolved]);
+
+  useEffect(() => {
+    Animated.spring(pan, {
+      toValue: getCoordinates(index),
+      useNativeDriver: true,
+      bounciness: 2,
+      speed: 20,
+    }).start();
+  }, [index, pan]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => {
+        if (isSolvedRef.current) {
+          return false;
+        }
+
+        return areAdjacent(indexRef.current, findEmptyIndex(tilesRef.current));
+      },
+      onMoveShouldSetPanResponder: () => {
+        if (isSolvedRef.current) {
+          return false;
+        }
+
+        return areAdjacent(indexRef.current, findEmptyIndex(tilesRef.current));
+      },
+      onPanResponderGrant: () => {
+        pan.stopAnimation(() => {
+          pan.extractOffset();
+        });
+      },
+      onPanResponderMove: (
+        _event: GestureResponderEvent,
+        gesture: PanResponderGestureState,
+      ) => {
+        const currentIndex = indexRef.current;
+        const emptyIndex = findEmptyIndex(tilesRef.current);
+        const { dx, dy } = getDirectionalDrag(currentIndex, emptyIndex, gesture);
+
+        pan.setValue({ x: dx, y: dy });
+      },
+      onPanResponderRelease: (
+        _event: GestureResponderEvent,
+        gesture: PanResponderGestureState,
+      ) => {
+        pan.flattenOffset();
+
+        const currentIndex = indexRef.current;
+        const emptyIndex = findEmptyIndex(tilesRef.current);
+
+        if (shouldCompleteMove(currentIndex, emptyIndex, gesture)) {
+          moveTile(currentIndex);
+          return;
+        }
+
+        Animated.spring(pan, {
+          toValue: getCoordinates(currentIndex),
+          useNativeDriver: true,
+          bounciness: 4,
+          speed: 16,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        pan.flattenOffset();
+        Animated.spring(pan, {
+          toValue: getCoordinates(indexRef.current),
+          useNativeDriver: true,
+          bounciness: 4,
+          speed: 16,
+        }).start();
+      },
+    }),
+  ).current;
+
+  return (
+    <Animated.View
+      {...panResponder.panHandlers}
+      style={[
+        styles.tile,
+        {
+          width: TILE_SIZE - TILE_GAP,
+          height: TILE_SIZE - TILE_GAP,
+          transform: pan.getTranslateTransform(),
+        },
+      ]}
+    >
+      <Text style={styles.tileText}>{tile}</Text>
+    </Animated.View>
+  );
+};
+
 export default function App() {
   const [tiles, setTiles] = useState<Tile[]>(shuffleTiles);
 
@@ -104,8 +275,6 @@ export default function App() {
         return prev;
       }
 
-      LayoutAnimation.configureNext(TILE_MOVE_ANIMATION);
-
       const updated = [...prev];
       updated[emptyIndex] = prev[tileIndex];
       updated[tileIndex] = null;
@@ -115,11 +284,8 @@ export default function App() {
   };
 
   const reset = () => {
-    LayoutAnimation.configureNext(SHUFFLE_ANIMATION);
     setTiles(shuffleTiles());
   };
-
-  const tileSize = (GRID_WIDTH - 16) / GRID_SIZE;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -132,26 +298,15 @@ export default function App() {
             return null;
           }
 
-          const row = Math.floor(index / GRID_SIZE);
-          const col = index % GRID_SIZE;
-
           return (
-            <TouchableOpacity
+            <DraggableTile
               key={`tile-${tile}`}
-              style={[
-                styles.tile,
-                {
-                  width: tileSize - 6,
-                  height: tileSize - 6,
-                  left: 8 + col * tileSize + 3,
-                  top: 8 + row * tileSize + 3,
-                },
-              ]}
-              onPress={() => moveTile(index)}
-              disabled={isSolved}
-            >
-              <Text style={styles.tileText}>{tile}</Text>
-            </TouchableOpacity>
+              tile={tile}
+              index={index}
+              tiles={tiles}
+              moveTile={moveTile}
+              isSolved={isSolved}
+            />
           );
         })}
       </View>
@@ -164,9 +319,6 @@ export default function App() {
     </SafeAreaView>
   );
 }
-
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const GRID_WIDTH = Math.min(SCREEN_WIDTH - 32, 340);
 
 const styles = StyleSheet.create({
   container: {
@@ -194,10 +346,12 @@ const styles = StyleSheet.create({
     position: 'relative',
     backgroundColor: '#dce3ef',
     borderRadius: 16,
-    padding: 8,
+    padding: GRID_PADDING,
   },
   tile: {
     position: 'absolute',
+    left: 0,
+    top: 0,
     borderRadius: 12,
     backgroundColor: '#3f51b5',
     alignItems: 'center',
