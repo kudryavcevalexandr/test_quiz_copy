@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import {
+  Alert,
   Animated,
   PanResponder,
   Text,
@@ -17,6 +18,11 @@ interface DraggableTileProps {
   moveTile: (index: number, gesture: DragGesture) => void;
   isSolved: boolean;
 }
+
+const showGestureError = (title: string, error: unknown) => {
+  console.error(title, error);
+  Alert.alert(title, String(error));
+};
 
 export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTileProps) => {
   const pan = useRef(new Animated.ValueXY(getCoordinates(index))).current;
@@ -48,37 +54,67 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !isSolvedRef.current,
-      onMoveShouldSetPanResponder: () => !isSolvedRef.current,
+      onStartShouldSetPanResponder: () => {
+        try {
+          return !isSolvedRef.current;
+        } catch (error) {
+          showGestureError('Ошибка в onStart', error);
+          return false;
+        }
+      },
+      onMoveShouldSetPanResponder: () => {
+        try {
+          return !isSolvedRef.current;
+        } catch (error) {
+          showGestureError('Ошибка в onMoveShouldSet', error);
+          return false;
+        }
+      },
       onPanResponderGrant: () => {
-        pan.stopAnimation(() => {
-          pan.extractOffset();
-        });
+        try {
+          pan.stopAnimation(() => {
+            pan.extractOffset();
+          });
+        } catch (error) {
+          showGestureError('Ошибка при захвате (Grant)', error);
+        }
       },
       onPanResponderMove: (
         _event: GestureResponderEvent,
         gesture: PanResponderGestureState,
       ) => {
-        pan.setValue(getDirectionalDrag(gesture));
+        try {
+          pan.setValue(getDirectionalDrag(gesture));
+        } catch (error) {
+          console.error('Ошибка в onMove', error);
+        }
       },
       onPanResponderRelease: (
         _event: GestureResponderEvent,
         gesture: PanResponderGestureState,
       ) => {
-        pan.flattenOffset();
+        try {
+          pan.flattenOffset();
 
-        const currentIndex = indexRef.current;
+          const currentIndex = indexRef.current;
 
-        if (shouldCompleteMove(gesture)) {
-          moveTile(currentIndex, gesture);
-          return;
+          if (shouldCompleteMove(gesture)) {
+            moveTile(currentIndex, gesture);
+            return;
+          }
+
+          snapToIndex(currentIndex);
+        } catch (error) {
+          showGestureError('Ошибка при отпускании', error);
         }
-
-        snapToIndex(currentIndex);
       },
       onPanResponderTerminate: () => {
-        pan.flattenOffset();
-        snapToIndex(indexRef.current);
+        try {
+          pan.flattenOffset();
+          snapToIndex(indexRef.current);
+        } catch (error) {
+          showGestureError('Ошибка при отмене жеста', error);
+        }
       },
     }),
   ).current;
