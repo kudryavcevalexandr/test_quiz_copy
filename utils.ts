@@ -31,8 +31,8 @@ export const getCoordinates = (index: number) => ({
 });
 
 export const getDirectionalDrag = (gesture: DragGesture) => ({
-  dx: 0,
-  dy: gesture.dy,
+  x: 0,
+  y: gesture.dy,
 });
 
 export const getDropIndex = (
