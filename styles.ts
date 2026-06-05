@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { GRID_PADDING, GRID_WIDTH } from './constants';
+import { ITEM_HEIGHT, LIST_HEIGHT, LIST_PADDING, LIST_WIDTH } from './constants';
 
 export const styles = StyleSheet.create({
   container: {
@@ -22,17 +22,18 @@ export const styles = StyleSheet.create({
     textAlign: 'center',
   },
   grid: {
-    width: GRID_WIDTH,
-    height: GRID_WIDTH,
+    width: LIST_WIDTH,
+    height: LIST_HEIGHT,
     position: 'relative',
     backgroundColor: '#dce3ef',
     borderRadius: 16,
-    padding: GRID_PADDING,
+    padding: LIST_PADDING,
   },
   tile: {
     position: 'absolute',
     left: 0,
     top: 0,
+    height: ITEM_HEIGHT,
     borderRadius: 12,
     backgroundColor: '#3f51b5',
     alignItems: 'center',
