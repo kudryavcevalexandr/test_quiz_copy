@@ -10,26 +10,19 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Пятнашки 3x3</Text>
-      <Text style={styles.subtitle}>Разложите квадратные блоки по порядку</Text>
+      <Text style={styles.title}>Список блоков</Text>
+      <Text style={styles.subtitle}>Перетащите полоски вертикально и соберите порядок</Text>
 
       <View style={styles.grid}>
-        {tiles.map((tile: Tile, index: number) => {
-          if (tile === null) {
-            return null;
-          }
-
-          return (
-            <DraggableTile
-              key={`tile-${tile}`}
-              tile={tile}
-              index={index}
-              tiles={tiles}
-              moveTile={moveTile}
-              isSolved={isSolved}
-            />
-          );
-        })}
+        {tiles.map((tile: Tile, index: number) => (
+          <DraggableTile
+            key={`tile-${tile}`}
+            tile={tile}
+            index={index}
+            moveTile={moveTile}
+            isSolved={isSolved}
+          />
+        ))}
       </View>
 
       {isSolved && <Text style={styles.winText}>Готово! Вы собрали порядок 🎉</Text>}

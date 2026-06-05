@@ -1,4 +1,4 @@
-export type Tile = number | null;
+export type Tile = number;
 
 export interface DragGesture {
   dx: number;

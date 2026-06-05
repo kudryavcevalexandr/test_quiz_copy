@@ -6,36 +6,27 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { TILE_GAP, TILE_SIZE } from './constants';
+import { ITEM_WIDTH } from './constants';
 import { styles } from './styles';
-import type { Tile } from './types';
-import {
-  areAdjacent,
-  findEmptyIndex,
-  getCoordinates,
-  getDirectionalDrag,
-  shouldCompleteMove,
-} from './utils';
+import type { DragGesture } from './types';
+import { getCoordinates, getDirectionalDrag, shouldCompleteMove } from './utils';
 
 interface DraggableTileProps {
   tile: number;
   index: number;
-  tiles: Tile[];
-  moveTile: (index: number) => void;
+  moveTile: (index: number, gesture: DragGesture) => void;
   isSolved: boolean;
 }
 
-export const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: DraggableTileProps) => {
+export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTileProps) => {
   const pan = useRef(new Animated.ValueXY(getCoordinates(index))).current;
   const indexRef = useRef(index);
-  const tilesRef = useRef(tiles);
   const isSolvedRef = useRef(isSolved);
 
   useEffect(() => {
     indexRef.current = index;
-    tilesRef.current = tiles;
     isSolvedRef.current = isSolved;
-  }, [index, tiles, isSolved]);
+  }, [index, isSolved]);
 
   useEffect(() => {
     Animated.spring(pan, {
@@ -46,22 +37,19 @@ export const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: Dragga
     }).start();
   }, [index, pan]);
 
+  const snapToIndex = (tileIndex: number) => {
+    Animated.spring(pan, {
+      toValue: getCoordinates(tileIndex),
+      useNativeDriver: true,
+      bounciness: 4,
+      speed: 16,
+    }).start();
+  };
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => {
-        if (isSolvedRef.current) {
-          return false;
-        }
-
-        return areAdjacent(indexRef.current, findEmptyIndex(tilesRef.current));
-      },
-      onMoveShouldSetPanResponder: () => {
-        if (isSolvedRef.current) {
-          return false;
-        }
-
-        return areAdjacent(indexRef.current, findEmptyIndex(tilesRef.current));
-      },
+      onStartShouldSetPanResponder: () => !isSolvedRef.current,
+      onMoveShouldSetPanResponder: () => !isSolvedRef.current,
       onPanResponderGrant: () => {
         pan.stopAnimation(() => {
           pan.extractOffset();
@@ -71,11 +59,7 @@ export const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: Dragga
         _event: GestureResponderEvent,
         gesture: PanResponderGestureState,
       ) => {
-        const currentIndex = indexRef.current;
-        const emptyIndex = findEmptyIndex(tilesRef.current);
-        const { dx, dy } = getDirectionalDrag(currentIndex, emptyIndex, gesture);
-
-        pan.setValue({ x: dx, y: dy });
+        pan.setValue(getDirectionalDrag(gesture));
       },
       onPanResponderRelease: (
         _event: GestureResponderEvent,
@@ -84,28 +68,17 @@ export const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: Dragga
         pan.flattenOffset();
 
         const currentIndex = indexRef.current;
-        const emptyIndex = findEmptyIndex(tilesRef.current);
 
-        if (shouldCompleteMove(currentIndex, emptyIndex, gesture)) {
-          moveTile(currentIndex);
+        if (shouldCompleteMove(gesture)) {
+          moveTile(currentIndex, gesture);
           return;
         }
 
-        Animated.spring(pan, {
-          toValue: getCoordinates(currentIndex),
-          useNativeDriver: true,
-          bounciness: 4,
-          speed: 16,
-        }).start();
+        snapToIndex(currentIndex);
       },
       onPanResponderTerminate: () => {
         pan.flattenOffset();
-        Animated.spring(pan, {
-          toValue: getCoordinates(indexRef.current),
-          useNativeDriver: true,
-          bounciness: 4,
-          speed: 16,
-        }).start();
+        snapToIndex(indexRef.current);
       },
     }),
   ).current;
@@ -116,8 +89,7 @@ export const DraggableTile = ({ tile, index, tiles, moveTile, isSolved }: Dragga
       style={[
         styles.tile,
         {
-          width: TILE_SIZE - TILE_GAP,
-          height: TILE_SIZE - TILE_GAP,
+          width: ITEM_WIDTH,
           transform: pan.getTranslateTransform(),
         },
       ]}
