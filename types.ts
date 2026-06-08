@@ -1,15 +1,15 @@
-export interface CatalogBlock {
+export interface BlockItem {
   id: string;
-  name: string;
+  title: string;
 }
 
-export interface CatalogCategory {
+export interface Category {
   id: string;
-  name: string;
-  blocks: CatalogBlock[];
+  title: string;
+  items: BlockItem[];
 }
 
-export interface Tile extends CatalogBlock {
+export interface Tile extends BlockItem {
   instanceId: string;
 }
 

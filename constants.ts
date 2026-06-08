@@ -1,25 +1,8 @@
 import { Dimensions } from 'react-native';
-import type { CatalogCategory } from './types';
+import catalogData from './catalog.json';
+import type { Category } from './types';
 
-export const CATALOG_CATEGORIES: CatalogCategory[] = Array.from(
-  { length: 10 },
-  (_, categoryIndex) => {
-    const categoryNumber = categoryIndex + 1;
-
-    return {
-      id: `category-${categoryNumber}`,
-      name: `Категория ${categoryNumber}`,
-      blocks: Array.from({ length: 10 }, (_, blockIndex) => {
-        const blockNumber = blockIndex + 1;
-
-        return {
-          id: `category-${categoryNumber}-block-${blockNumber}`,
-          name: `Блок ${categoryNumber}.${blockNumber}`,
-        };
-      }),
-    };
-  },
-);
+export const CATALOG_CATEGORIES: Category[] = catalogData;
 
 export const TILE_GAP = 8;
 export const LIST_PADDING = 8;

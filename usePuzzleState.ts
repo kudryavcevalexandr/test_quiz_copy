@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import type { CatalogBlock, DragGesture, Tile } from './types';
+import type { BlockItem, DragGesture, Tile } from './types';
 import { getDropIndex, reorderTiles } from './utils';
 
 export const usePuzzleState = () => {
@@ -14,7 +14,7 @@ export const usePuzzleState = () => {
     });
   }, []);
 
-  const addBlock = useCallback((block: CatalogBlock) => {
+  const addBlock = useCallback((block: BlockItem) => {
     nextInstanceId.current += 1;
     setTiles((prev: Tile[]) => [
       ...prev,
