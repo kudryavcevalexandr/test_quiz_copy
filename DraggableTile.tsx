@@ -7,16 +7,15 @@ import {
   type GestureResponderEvent,
   type PanResponderGestureState,
 } from 'react-native';
-import { ITEM_WIDTH } from './constants';
+import { ITEM_WIDTH, LONG_PRESS_DELAY, TAP_DISTANCE } from './constants';
 import { styles } from './styles';
-import type { DragGesture } from './types';
+import type { DragGesture, Tile } from './types';
 import { getCoordinates, getDirectionalDrag, shouldCompleteMove } from './utils';
 
 interface DraggableTileProps {
-  tile: number;
+  tile: Tile;
   index: number;
   moveTile: (index: number, gesture: DragGesture) => void;
-  isSolved: boolean;
 }
 
 const showGestureError = (title: string, error: unknown) => {
@@ -24,15 +23,16 @@ const showGestureError = (title: string, error: unknown) => {
   Alert.alert(title, String(error));
 };
 
-export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTileProps) => {
+export const DraggableTile = ({ tile, index, moveTile }: DraggableTileProps) => {
   const pan = useRef(new Animated.ValueXY(getCoordinates(index))).current;
   const indexRef = useRef(index);
-  const isSolvedRef = useRef(isSolved);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isLongPressReady = useRef(false);
+  const isDragging = useRef(false);
 
   useEffect(() => {
     indexRef.current = index;
-    isSolvedRef.current = isSolved;
-  }, [index, isSolved]);
+  }, [index]);
 
   useEffect(() => {
     Animated.spring(pan, {
@@ -43,6 +43,31 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
     }).start();
   }, [index, pan]);
 
+  useEffect(
+    () => () => {
+      if (longPressTimer.current) {
+        clearTimeout(longPressTimer.current);
+      }
+    },
+    [],
+  );
+
+  const resetLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+    isLongPressReady.current = false;
+  };
+
+  const startLongPress = () => {
+    resetLongPress();
+    longPressTimer.current = setTimeout(() => {
+      isLongPressReady.current = true;
+      longPressTimer.current = null;
+    }, LONG_PRESS_DELAY);
+  };
+
   const snapToIndex = (tileIndex: number) => {
     Animated.spring(pan, {
       toValue: getCoordinates(tileIndex),
@@ -52,26 +77,20 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
     }).start();
   };
 
+  const finishDrag = () => {
+    isDragging.current = false;
+    resetLongPress();
+  };
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => {
-        try {
-          return !isSolvedRef.current;
-        } catch (error) {
-          showGestureError('Ошибка в onStart', error);
-          return false;
-        }
-      },
-      onMoveShouldSetPanResponder: () => {
-        try {
-          return !isSolvedRef.current;
-        } catch (error) {
-          showGestureError('Ошибка в onMoveShouldSet', error);
-          return false;
-        }
-      },
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_event, gesture) =>
+        isLongPressReady.current &&
+        (Math.abs(gesture.dx) > TAP_DISTANCE || Math.abs(gesture.dy) > TAP_DISTANCE),
       onPanResponderGrant: () => {
         try {
+          isDragging.current = true;
           pan.stopAnimation(() => {
             pan.extractOffset();
           });
@@ -95,8 +114,8 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
       ) => {
         try {
           pan.flattenOffset();
-
           const currentIndex = indexRef.current;
+          finishDrag();
 
           if (shouldCompleteMove(gesture)) {
             moveTile(currentIndex, gesture);
@@ -108,9 +127,11 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
           showGestureError('Ошибка при отпускании', error);
         }
       },
+      onPanResponderTerminationRequest: () => !isDragging.current,
       onPanResponderTerminate: () => {
         try {
           pan.flattenOffset();
+          finishDrag();
           snapToIndex(indexRef.current);
         } catch (error) {
           showGestureError('Ошибка при отмене жеста', error);
@@ -122,6 +143,9 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
   return (
     <Animated.View
       {...panResponder.panHandlers}
+      onTouchStart={startLongPress}
+      onTouchEnd={resetLongPress}
+      onTouchCancel={resetLongPress}
       style={[
         styles.tile,
         {
@@ -130,7 +154,7 @@ export const DraggableTile = ({ tile, index, moveTile, isSolved }: DraggableTile
         },
       ]}
     >
-      <Text style={styles.tileText}>{tile}</Text>
+      <Text style={styles.tileText}>{tile.name}</Text>
     </Animated.View>
   );
 };

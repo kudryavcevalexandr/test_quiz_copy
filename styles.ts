@@ -1,13 +1,14 @@
 import { StyleSheet } from 'react-native';
-import { ITEM_HEIGHT, LIST_HEIGHT, LIST_PADDING, LIST_WIDTH } from './constants';
+import { ITEM_HEIGHT, LIST_PADDING, LIST_WIDTH } from './constants';
 
 export const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: '#f3f6fb',
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
   },
   title: {
     fontSize: 28,
@@ -16,18 +17,41 @@ export const styles = StyleSheet.create({
   },
   subtitle: {
     marginTop: 8,
-    marginBottom: 24,
+    marginBottom: 16,
     fontSize: 16,
     color: '#607d8b',
     textAlign: 'center',
   },
+  blockScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  blockScrollContent: {
+    alignItems: 'center',
+    flexGrow: 1,
+  },
   grid: {
     width: LIST_WIDTH,
-    height: LIST_HEIGHT,
     position: 'relative',
     backgroundColor: '#dce3ef',
     borderRadius: 16,
     padding: LIST_PADDING,
+  },
+  emptyState: {
+    width: LIST_WIDTH,
+    minHeight: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: '#b0bec5',
+    borderRadius: 16,
+    padding: 24,
+  },
+  emptyStateText: {
+    color: '#78909c',
+    fontSize: 16,
+    textAlign: 'center',
   },
   tile: {
     position: 'absolute',
@@ -38,28 +62,87 @@ export const styles = StyleSheet.create({
     backgroundColor: '#3f51b5',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   tileText: {
     color: '#fff',
-    fontSize: 30,
+    fontSize: 18,
     fontWeight: '700',
   },
-  winText: {
-    marginTop: 18,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2e7d32',
-  },
   button: {
-    marginTop: 26,
+    marginTop: 12,
     backgroundColor: '#009688',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
     borderRadius: 10,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  modalBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(38, 50, 56, 0.45)',
+  },
+  modalContent: {
+    height: '82%',
+    backgroundColor: '#f8fafc',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    minHeight: 68,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#cfd8dc',
+    paddingHorizontal: 16,
+  },
+  modalHeaderPlaceholder: {
+    width: 64,
+  },
+  modalTitle: {
+    flex: 1,
+    color: '#263238',
+    fontSize: 18,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  modalHeaderAction: {
+    minWidth: 64,
+    color: '#00796b',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  catalogList: {
+    padding: 16,
+    gap: 10,
+  },
+  catalogItem: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  catalogItemText: {
+    color: '#37474f',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  catalogItemArrow: {
+    color: '#78909c',
+    fontSize: 28,
   },
 });
