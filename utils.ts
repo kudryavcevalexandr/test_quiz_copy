@@ -1,29 +1,14 @@
 import {
   DRAG_COMPLETION_DISTANCE,
-  ITEM_COUNT,
   ITEM_STEP,
   LIST_PADDING,
   SWIPE_VELOCITY,
   TAP_DISTANCE,
-  WIN_STATE,
 } from './constants';
 import type { DragGesture, Tile } from './types';
 
 const clamp = (value: number, min: number, max: number): number =>
   Math.min(Math.max(value, min), max);
-
-export const isWinningState = (tiles: Tile[]): boolean =>
-  tiles.every((value, index) => value === WIN_STATE[index]);
-
-export const shuffleTiles = (): Tile[] => {
-  let shuffled: Tile[] = [...WIN_STATE];
-
-  do {
-    shuffled = [...WIN_STATE].sort(() => Math.random() - 0.5);
-  } while (isWinningState(shuffled));
-
-  return shuffled;
-};
 
 export const getCoordinates = (index: number) => ({
   x: LIST_PADDING,
@@ -38,7 +23,7 @@ export const getDirectionalDrag = (gesture: DragGesture) => ({
 export const getDropIndex = (
   currentIndex: number,
   gesture: DragGesture,
-  itemCount: number = ITEM_COUNT,
+  itemCount: number,
 ): number => {
   let offsetSlots = Math.round(gesture.dy / ITEM_STEP);
 
