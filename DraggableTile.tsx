@@ -154,7 +154,7 @@ export const DraggableTile = ({ tile, index, moveTile }: DraggableTileProps) => 
         },
       ]}
     >
-      <Text style={styles.tileText}>{tile.name}</Text>
+      <Text style={styles.tileText}>{tile.title}</Text>
     </Animated.View>
   );
 };

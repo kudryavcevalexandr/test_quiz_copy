@@ -10,20 +10,20 @@ import {
 import { CATALOG_CATEGORIES, getListHeight } from './constants';
 import { DraggableTile } from './DraggableTile';
 import { styles } from './styles';
-import type { CatalogBlock, CatalogCategory, Tile } from './types';
+import type { BlockItem, Category, Tile } from './types';
 import { usePuzzleState } from './usePuzzleState';
 
 export default function App() {
   const { tiles, moveTile, addBlock } = usePuzzleState();
   const [isCatalogVisible, setCatalogVisible] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<CatalogCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
 
   const closeCatalog = () => {
     setCatalogVisible(false);
     setSelectedCategory(null);
   };
 
-  const handleAddBlock = (block: CatalogBlock) => {
+  const handleAddBlock = (block: BlockItem) => {
     addBlock(block);
     closeCatalog();
   };
@@ -79,7 +79,7 @@ export default function App() {
                 <View style={styles.modalHeaderPlaceholder} />
               )}
               <Text style={styles.modalTitle}>
-                {selectedCategory?.name ?? 'Каталог категорий'}
+                {selectedCategory?.title ?? 'Каталог категорий'}
               </Text>
               <TouchableOpacity onPress={closeCatalog}>
                 <Text style={styles.modalHeaderAction}>Закрыть</Text>
@@ -88,13 +88,13 @@ export default function App() {
 
             <ScrollView contentContainerStyle={styles.catalogList}>
               {selectedCategory
-                ? selectedCategory.blocks.map((block) => (
+                ? selectedCategory.items.map((block) => (
                     <TouchableOpacity
                       key={block.id}
                       style={styles.catalogItem}
                       onPress={() => handleAddBlock(block)}
                     >
-                      <Text style={styles.catalogItemText}>{block.name}</Text>
+                      <Text style={styles.catalogItemText}>{block.title}</Text>
                       <Text style={styles.catalogItemArrow}>＋</Text>
                     </TouchableOpacity>
                   ))
@@ -104,7 +104,7 @@ export default function App() {
                       style={styles.catalogItem}
                       onPress={() => setSelectedCategory(category)}
                     >
-                      <Text style={styles.catalogItemText}>{category.name}</Text>
+                      <Text style={styles.catalogItemText}>{category.title}</Text>
                       <Text style={styles.catalogItemArrow}>›</Text>
                     </TouchableOpacity>
                   ))}
