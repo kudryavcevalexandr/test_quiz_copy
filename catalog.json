@@ -1,7 +1,7 @@
 [
   {
     "id": "planning",
-    "title": "Планирование",
+    "title": "Планирование100",
     "items": [
       { "id": "daily-plan", "title": "План на день" },
       { "id": "weekly-goals", "title": "Цели на неделю" },
@@ -11,7 +11,7 @@
   },
   {
     "id": "work",
-    "title": "Работа",
+    "title": "Работа200",
     "items": [
       { "id": "current-tasks", "title": "Текущие задачи" },
       { "id": "meetings", "title": "Встречи" },
